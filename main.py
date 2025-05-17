@@ -422,28 +422,84 @@ Tool Output:
             elif user_input.lower().startswith('analyze-function'): # Restored analyze-function shortcut
                 try:
                     address = None
+                    # Define TOOLS_WITH_AI_ANALYSIS here or ensure it's accessible
+                    # For this edit, let's define it locally if not already in scope
+                    # Or better, ensure it's defined at a higher scope if used in multiple places
+                    TOOLS_WITH_AI_ANALYSIS = [
+                        "analyze_function", 
+                        "decompile_function", "decompile_function_by_address",
+                        "list_functions", 
+                        "list_imports", 
+                        "list_exports", 
+                        "list_strings"
+                    ]
+
                     if user_input.lower().startswith('analyze-function '):
                         address_part = user_input[len('analyze-function '):].strip()
                         if address_part: # Ensure address_part is not empty
                             address = address_part
                     
-                    print(f"\nExecuting: analyze_function({f'address=\"{address}\"' if address else ''})")
-                    # Ensure bridge.ghidra is used
-                    result = bridge.ghidra.analyze_function(address=address) if hasattr(bridge, 'ghidra') else "Ghidra client not available."
+                    params_for_log = f"address={repr(address)}" if address else ""
+                    print(f"\nExecuting: analyze_function({f'address=\\"{address}\\"' if address else ''})")
+                    
+                    raw_tool_result = bridge.ghidra.analyze_function(address=address) if hasattr(bridge, 'ghidra') else "Ghidra client not available."
                     
                     print("\n============================================================")
                     print(f"Results from analyze_function:")
                     print("============================================================")
-                    # Log result before printing, in case it's very long
-                    log_entry_params = f"address={repr(address)}" if address else ""
-                    current_session_log.append(f"=== Result of analyze-function({log_entry_params}) ===\\n{result}\\n")
-                    print(result)
+                    current_session_log.append(f"=== Result of analyze-function({params_for_log}) ===\\n{raw_tool_result}\\n")
+                    print(raw_tool_result) # Print raw output
                     print("============================================================\n")
+
+                    # AI Analysis Step for analyze-function shortcut
+                    if raw_tool_result != "Ghidra client not available." and not (isinstance(raw_tool_result, str) and raw_tool_result.lower().startswith("error:")):
+                        formatted_tool_data = ""
+                        if isinstance(raw_tool_result, dict) or isinstance(raw_tool_result, list):
+                            try:
+                                formatted_tool_data = json.dumps(raw_tool_result, indent=2)
+                            except TypeError:
+                                formatted_tool_data = str(raw_tool_result)
+                        else:
+                            formatted_tool_data = str(raw_tool_result)
+
+                        analysis_prompt = (
+                            f"The Ghidra tool 'analyze_function' was executed with parameters: ({params_for_log}). "
+                            f"Its output is below. Based *only* on this provided data:\\n"
+                            f"1. Identify the primary function being analyzed (name and address).\\n"
+                            f"2. Summarize its apparent purpose or main actions based on decompiled code snippets and called functions.\\n"
+                            f"3. List any notable cross-references (calls to other functions, or data references) mentioned in the output.\\n"
+                            f"4. Point out any immediate observations a reverse engineer might find interesting (e.g., unusual patterns, specific API calls, complex logic, potential vulnerabilities like buffer overflows, format string bugs, etc.).\\n"
+                            f"Tool Output:\\n```json\\n{formatted_tool_data}\\n```"
+                        )
+                        
+                        print(f"Sending output from analyze-function to AI for analysis...")
+                        try:
+                            ai_analysis = bridge.ollama.generate(prompt=analysis_prompt)
+                            
+                            bridge.logger.info(f"AI analysis received snippet: '{ai_analysis[:50]}...'")
+                            # print(f"DEBUG: AI Response Type: {type(ai_analysis)}, Is None: {ai_analysis is None}, Is Empty Str: {ai_analysis == ''}, Length: {len(ai_analysis) if ai_analysis else 0}")
+
+                            if ai_analysis and ai_analysis.strip():
+                                print("\n=== AI Analysis of Function Output ===")
+                                print(ai_analysis)
+                                print("=====================================")
+                                current_session_log.append(f"=== AI Analysis of analyze-function({params_for_log}) ===\\n{ai_analysis}\\n")
+                            else:
+                                print("\nAI analysis returned empty or whitespace-only response.")
+                                current_session_log.append(f"=== AI Analysis of analyze-function({params_for_log}) returned empty. ===\\n")
+
+                        except Exception as e:
+                            print(f"Error during AI analysis: {e}")
+                            bridge.logger.error(f"Error during AI analysis for analyze-function shortcut: {e}", exc_info=True)
+                            current_session_log.append(f"=== Error during AI analysis of analyze-function({params_for_log}): {e} ===\\n")
+                    elif isinstance(raw_tool_result, str) and raw_tool_result.lower().startswith("error:"):
+                         print(f"Skipping AI analysis due to tool error: {raw_tool_result}")
+                    
                 except Exception as e:
                     print(f"Error analyzing function: {str(e)}")
                     bridge.logger.error(f"Error in 'analyze-function' shortcut: {e}", exc_info=True)
                     current_session_log.append(f"=== Error in analyze-function shortcut: {e} ===\\n")
-                continue
+                continue # Keep continue for now, as this block is self-contained for analysis
 
             elif user_input.lower() == 'review_session':
                 if not current_session_log:
