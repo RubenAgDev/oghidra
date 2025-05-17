@@ -28,11 +28,14 @@ ENV/
 
 # OS specific files
 .DS_Store
-Thumbs.db
+Thumbs.db 
 
-# Session and cache data
-data/
+# Ignore all files in the knowledge_base directory
+knowledge_base/*
+
+# Ignore all files in the Session directory
+Session/*
+
+# Session cache files
 ghidra_session_cache/
-ghidra_knowledge_cache/
-vector_db/
-*.jsonl 
+*.log

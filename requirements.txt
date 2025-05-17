@@ -1,4 +1,7 @@
-flask==2.0.1
-requests==2.26.0
+flask>=3.0.3,<3.1
+requests>=2.26.0
 httpx>=0.24.0
-python-dotenv>=1.0.0 
+python-dotenv>=1.0.0
+sentence-transformers>=2.2.2 # Optional: for vector search and CAG knowledge summarization
+numpy>=1.24.0             # Optional: dependency for sentence-transformers
+rich>=13.7.1              # For enhanced terminal output in interactive mode 
