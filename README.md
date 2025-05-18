@@ -4,13 +4,17 @@ OGhidra bridges the gap between Large Language Models (LLMs) running via Ollama 
 
 Finding Malware with the 'run-tool analyze_function()' feature
 
-Suspicious Function Name 
-![momento-0-malwarefind](https://github.com/user-attachments/assets/2a927ada-00d6-4297-9277-5a37f98062f8)
+Inspecting function with strange string
+![momento-0-malwarefind](https://github.com/user-attachments/assets/7779d9a4-316e-49bf-ada0-4468d9bd0bc1)
 
-Investigating function "SCARRY4"
-![momento-2-malwarefind](https://github.com/user-attachments/assets/a2bba935-a138-4a2d-b5f4-7b9ac423a954)
+Inspecting strage function name 'SCARRY4'
+![momento-2-malwarefind](https://github.com/user-attachments/assets/0f2ac533-3d19-4b13-9757-a8e0d1fb8f0b)
 
-![momento-4-malwarefind](https://github.com/user-attachments/assets/1e668b1c-14ed-4424-a0f2-6a5b2b265aba)
+Uh oh that doesn't sound good
+![momento-3-malwarefind](https://github.com/user-attachments/assets/63963014-566b-47eb-9407-b2270ef9884e)
+
+Ask AI to summarize our findings
+![momento-4-malwarefind](https://github.com/user-attachments/assets/5881fee8-6432-4355-9f94-a76061434d6d)
 
 
 ## Key Features
@@ -45,6 +49,29 @@ OGhidra uses a streamlined three-phase approach:
 *   `MemoryManager`: Manages session history and RAG (`src/memory_manager.py`).
 *   `CAGManager`: Manages Cache-Augmented Generation (`src/cag/manager.py`).
 
+## Pre-installation 
+Contact me at enochsurge@gmail.com for setup help. 
+
+1.  **SETUP-GHIDRAMCP**
+    *    Ghidra 11.3.2 (https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.3.2_build/ghidra_11.3.2_PUBLIC_20250415.zip)
+    *    GhidraMCP (https://github.com/LaurieWired/GhidraMCP/releases/download/1.3/GhidraMCP-release-1-3.zip)
+        *    Run Ghidra
+        *    Select File -> Install Extensions
+        *    Click the + button
+        *    Select the GhidraMCP-1-2.zip (or your chosen version) from the downloaded release
+        *    Restart Ghidra
+        *    Make sure the GhidraMCPPlugin is enabled in File -> Configure -> Developer
+        *    Optional: Configure the port in Ghidra with Edit -> Tool Options -> GhidraMCP HTTP Server
+ 2.  **OLLAMA-SERVER-INSTALLATION**
+    *    Install Ollama
+    *    Serve Ollamma service
+    *    Pull Gemma3:27B
+ 3.  *Run 'python main.py --interactive'
+ 4.  Check Health:
+
+![image](https://github.com/user-attachments/assets/d9ea3b2b-d041-4642-8b61-ff8297e1120e)
+
+
 ## Setup and Installation
 
 1.  **Clone the repository:**
@@ -68,22 +95,34 @@ OGhidra uses a streamlined three-phase approach:
     *   Edit `.env` to set your Ollama endpoint (`OLLAMA_API_URL`), default model (`OLLAMA_MODEL`), and GhidraMCP server URLs (`GHIDRA_MCP_URL`, `GHIDRA_MCP_EXTENDED_URL`).
     *   Configure phase-specific models, memory, and CAG settings as needed (see below).
 
-## Running OGhidra
-
-### 1. Start the Extended API Server
-
-```bash
-python src/ghidra_mcp_server.py
-```
-This will start the Flask server, typically on `http://localhost:8081`.
-
-### 2. Run the Bridge
 
 **Interactive Mode:**
 
 ```bash
 python src/main.py --interactive
 ```
+
+See `README-MODELS.md` and `README-MODEL-SWITCHING.md` (now incorporated here) for more details on model selection recommendations.
+
+
+## Interactive Mode Commands
+
+When running OGhidra in interactive mode (`python src/main.py --interactive`), you have access to several commands to inspect and interact with the loaded binary:
+
+*   **`run-tools analyze_function <function_name_or_address>`**: Decompiles and provides an analysis of the specified function. For example: `analyze_function FUN_00401230` or `analyze_function main`.
+*   **`run-tools strings`**: Lists all discovered strings within the binary. You can then ask follow-up questions about specific strings.
+*   **`run-tools imports`**: Displays a list of all imported functions and the libraries they belong to.
+*   **`run-tools exports`**: Shows all exported symbols from the binary.
+*   **`review_session`**: Allows you to review the commands and AI responses from the current interactive session.
+*   **`cag`**: Displays the current status of Cache-Augmented Generation (CAG), including whether it's enabled and information about the knowledge and session caches. Use this to check if CAG is active and what context it's using.
+*   **`health`**: Checks the operational status of the Ollama and GhidraMCP bridge connections.
+*   **`tools`**: Lists available tools/commands that can be used.
+*   **`models`**: Lists the Ollama models available to the bridge.
+*   **`vector-store`**: (If RAG/vector embeddings are enabled) Provides information or options related to the vector store.
+*   **`help`**: Shows a list of available interactive commands and their descriptions.
+*   **`exit` / `quit`**: Exits the interactive mode.
+
+These commands leverage the underlying GhidraMCP functionalities and the AI's analytical capabilities to provide insights into the binary.
 
 **Single Query:**
 
@@ -155,10 +194,3 @@ See `README-CAG.md` (now incorporated here) for more details.
 *   **Bridge/Normalization Tests**: Check `tests/` directory (e.g., `test_command_normalization.py`, `test_bridge.py`). Run relevant tests using `unittest`.
 *   **Memory Sample Data**: `python src/generate_sample_data.py` (See memory docs for options).
 
-## Contributing
-
-Please refer to the project's contribution guidelines (if available).
-
-## License
-
-Specify project license here.
