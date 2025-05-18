@@ -66,10 +66,6 @@ Contact me at enochsurge@gmail.com for setup help.
     *    Install Ollama
     *    Serve Ollamma service
     *    Pull Gemma3:27B
- 3.  *Run 'python main.py --interactive'
- 4.  Check Health:
-
-![image](https://github.com/user-attachments/assets/d9ea3b2b-d041-4642-8b61-ff8297e1120e)
 
 
 ## Setup and Installation
@@ -94,6 +90,15 @@ Contact me at enochsurge@gmail.com for setup help.
     *   Copy `.envexample` to `.env`.
     *   Edit `.env` to set your Ollama endpoint (`OLLAMA_API_URL`), default model (`OLLAMA_MODEL`), and GhidraMCP server URLs (`GHIDRA_MCP_URL`, `GHIDRA_MCP_EXTENDED_URL`).
     *   Configure phase-specific models, memory, and CAG settings as needed (see below).
+
+
+   ** After Installation **
+ 6.  *Run 'python main.py --interactive'
+ 7.  Check Health:
+
+
+This will help identify if your Local OLLAMA and Local Ghidra Server are connected (Ghidra has to be open)
+![image](https://github.com/user-attachments/assets/d9ea3b2b-d041-4642-8b61-ff8297e1120e)
 
 
 **Interactive Mode:**
