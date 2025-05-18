@@ -1,578 +1,653 @@
 #!/usr/bin/env python3
 """
-Main entry point for the Ollama-GhidraMCP Bridge.
+Main entry point for the Ollama-GhidraMCP Bridge application.
 """
 
-import argparse
-import logging
-import sys
 import os
+import sys
+import argparse
+import json
+from dotenv import load_dotenv
 
-from config import BridgeConfig
-from memory_manager import MemoryManager
-from memory_health import run_health_check, MemoryHealthCheck
+# Load environment variables from .env file if present
+load_dotenv()
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
+# Import after loading environment variables
+from src.config import BridgeConfig
+from src.bridge import Bridge
+from src.ollama_client import OllamaClient
+from src.ghidra_client import GhidraMCPClient
+
+def print_header():
+    """Print the application header."""
+    width = 70
+    header = [
+        "OGhidra - Simplified Three-Phase Architecture",
+        "------------------------------------------",
+        "",
+        "1. Planning Phase: Create a plan for addressing the query",
+        "2. Tool Calling Phase: Execute tools to gather information",
+        "3. Analysis Phase: Analyze results and provide answers",
+        "",
+        "For more information, see README-ARCHITECTURE.md"
     ]
-)
+    
+    print('╔' + '═' * (width - 2) + '╗')
+    for line in header:
+        padding = (width - 2 - len(line))
+        left_padding = padding // 2
+        right_padding = padding - left_padding
+        print('║' + ' ' * left_padding + line + ' ' * right_padding + '║')
+    print('╚' + '═' * (width - 2) + '╝')
 
-logger = logging.getLogger(__name__)
-
-def parse_args():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(
-        description="Ollama-GhidraMCP Bridge - Connect Ollama LLMs to Ghidra via GhidraMCP"
-    )
-    
-    parser.add_argument(
-        "--check-memory", 
-        action="store_true",
-        help="Run a health check on the memory system and display the results"
-    )
-    
-    parser.add_argument(
-        "--clear-memory", 
-        action="store_true",
-        help="Clear all session memory (USE WITH CAUTION)"
-    )
-    
-    parser.add_argument(
-        "--enable-vector-embeddings", 
-        action="store_true",
-        help="Enable vector embeddings for RAG capabilities"
-    )
-    
-    parser.add_argument(
-        "--disable-vector-embeddings", 
-        action="store_true",
-        help="Disable vector embeddings to save resources"
-    )
-    
-    parser.add_argument(
-        "--disable-cag", 
-        action="store_true",
-        help="Disable Context-Aware Generation (CAG)"
-    )
-    
-    parser.add_argument(
-        "--memory-stats", 
-        action="store_true",
-        help="Display simple statistics about memory usage and exit"
-    )
-    
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Start in interactive mode"
-    )
-    
-    return parser.parse_args()
-
-def display_memory_stats(memory_manager):
-    """Display simple memory statistics."""
-    session_count = memory_manager.get_session_count()
-    recent_sessions = memory_manager.get_recent_sessions(5)
-    successful_sessions = memory_manager.get_successful_sessions()
-    
-    print("\n" + "="*50)
-    print(" MEMORY STATISTICS")
-    print("="*50)
-    print(f"Total sessions: {session_count}")
-    print(f"Successful sessions: {len(successful_sessions)}")
-    
-    if recent_sessions:
-        print("\nRecent sessions:")
-        for i, session in enumerate(recent_sessions):
-            print(f"{i+1}. {session.user_task_description[:60]}{'...' if len(session.user_task_description) > 60 else ''}")
-            print(f"   Outcome: {session.outcome}, Tools used: {len(session.tool_calls)}")
-            if session.session_summary:
-                print(f"   Summary: {session.session_summary[:100]}{'...' if len(session.session_summary) > 100 else ''}")
-            print()
-    
-    print("="*50 + "\n")
-
-def toggle_vector_embeddings(config, enable=True):
-    """Toggle vector embeddings on or off."""
-    config.session_history.use_vector_embeddings = enable
-    status = "enabled" if enable else "disabled"
-    logger.info(f"Vector embeddings {status}")
-    print(f"\nVector embeddings are now {status}.\n")
-    return config
-
-def process_interactive_command(command, config, memory_manager):
-    """
-    Process interactive commands.
-    
-    Args:
-        command: The command string from the user.
-        config: The BridgeConfig instance.
-        memory_manager: The MemoryManager instance.
-        
-    Returns:
-        bool: True to continue, False to exit.
-    """
-    command = command.strip().lower()
-    
-    if command in ['exit', 'quit']:
-        return False
-    elif command == 'health':
-        print("\n=== API Health Check ===")
-        try:
-            # This is a placeholder - you would need to implement your actual API health checks here
-            # For example, pinging the Ollama and GhidraMCP APIs
-            print("Ollama API: OK") # Replace with actual check
-            print("GhidraMCP API: OK") # Replace with actual check
-        except Exception as e:
-            print(f"API health check failed: {e}")
-        print("========================\n")
-        
-        # Now run the memory health check
-        run_health_check(config, memory_manager)
-        
-        # Also show the vector store information
-        print("\n=== Vector Store Information ===")
-        health_checker = MemoryHealthCheck(config, memory_manager)
-        vector_info = health_checker.check_vector_store()
-        
-        print(f"Vector embeddings: {'Enabled ✅' if vector_info['enabled'] else 'Disabled ❌'}")
-        
-        if vector_info['enabled']:
-            print(f"Embedding model: {vector_info['embedding_model']}")
-            print(f"Vectors available: {'Yes ✅' if vector_info['vectors_available'] else 'No ❌'}")
-            
-            if vector_info['vectors_available']:
-                print(f"Vector count: {vector_info['vector_count']}")
-                print(f"Vector dimension: {vector_info['vector_dimension']}")
-                print(f"Mean vector norm: {vector_info['vector_norm_mean']:.4f}")
-                
-                # Display all session IDs in vector store
-                session_ids = vector_info.get('session_ids', [])
-                if session_ids:
-                    print(f"\nStored Session IDs ({len(session_ids)}):")
-                    for i, sid in enumerate(session_ids):
-                        print(f"  {i+1}. {sid}")
-                
-                # Display sample similarity matrix if available
-                if 'sample_similarity_matrix' in vector_info:
-                    print("\nSample Vector Similarity Matrix:")
-                    matrix = vector_info['sample_similarity_matrix']
-                    for i, row in enumerate(matrix):
-                        print(f"  {i}: {' '.join([f'{val:.2f}' for val in row])}")
-        
-        print("===============================\n")
-        return True
-    elif command == 'vector-store':
-        # Add a dedicated command for vector store inspection
-        print("\n=== Vector Store Information ===")
-        health_checker = MemoryHealthCheck(config, memory_manager)
-        vector_info = health_checker.check_vector_store()
-        
-        print(f"Vector embeddings: {'Enabled ✅' if vector_info['enabled'] else 'Disabled ❌'}")
-        
-        if vector_info['enabled']:
-            print(f"Embedding model: {vector_info['embedding_model']}")
-            print(f"Vectors available: {'Yes ✅' if vector_info['vectors_available'] else 'No ❌'}")
-            
-            if vector_info['vectors_available']:
-                print(f"Vector count: {vector_info['vector_count']}")
-                print(f"Vector dimension: {vector_info['vector_dimension']}")
-                print(f"Mean vector norm: {vector_info['vector_norm_mean']:.4f}")
-                
-                # Display all session IDs in vector store
-                session_ids = vector_info.get('session_ids', [])
-                if session_ids:
-                    print(f"\nStored Session IDs ({len(session_ids)}):")
-                    for i, sid in enumerate(session_ids):
-                        print(f"  {i+1}. {sid}")
-                
-                # Display sample similarity matrix if available
-                if 'sample_similarity_matrix' in vector_info:
-                    print("\nSample Vector Similarity Matrix:")
-                    matrix = vector_info['sample_similarity_matrix']
-                    for i, row in enumerate(matrix):
-                        print(f"  {i}: {' '.join([f'{val:.2f}' for val in row])}")
-        
-        print("===============================\n")
-        return True
-    elif command == 'models':
-        # This is a placeholder - you would need to implement your actual model listing logic
-        print("\n=== Available Models ===")
-        print("gemma3:27b (current)")
-        print("llama3.1:8b")
-        print("mistral:7b")
-        print("======================\n")
-        return True
-    elif command == 'tools':
-        # Display all available Ghidra tools and their parameters
-        print("\n=== Available Ghidra Tools ===")
-        
-        # Import the tools from config
-        try:
-            from src.ghidra_client import GhidraMCPClient
-            
-            # Create a temporary client instance to get its methods
-            client = GhidraMCPClient(config.ghidra)
-            
-            # Get all public methods (excluding those starting with _)
-            tools = [name for name in dir(client) if not name.startswith('_') and callable(getattr(client, name))]
-            
-            # Count the tools and provide a summary
-            print(f"Found {len(tools)} available tools:\n")
-            
-            for tool_name in sorted(tools):
-                tool_func = getattr(client, tool_name)
-                # Get parameter info from function signature
-                import inspect
-                signature = inspect.signature(tool_func)
-                params = []
-                for param_name, param in signature.parameters.items():
-                    if param_name != 'self':  # Skip the 'self' parameter
-                        if param.default is inspect.Parameter.empty:
-                            params.append(f"{param_name} (required)")
-                        else:
-                            default_val = param.default
-                            if default_val is None:
-                                default_val = "None"
-                            params.append(f"{param_name}={default_val}")
-                
-                # Get docstring if available
-                doc = tool_func.__doc__.strip().split('\n')[0] if tool_func.__doc__ else "No description available"
-                
-                print(f"  {tool_name}({', '.join(params)})")
-                print(f"    {doc}")
-                print()
-                
-        except Exception as e:
-            print(f"Error loading tools: {str(e)}")
-            print(f"Debugging details:")
-            print(f"  Exception type: {type(e).__name__}")
-            print(f"  Exception traceback:")
-            import traceback
-            traceback.print_exc()
-            
-        print("===========================\n")
-        return True
-    elif command.startswith('run-tool '):
-        # Execute a specific tool directly
-        tool_str = command[9:].strip()  # Remove 'run-tool ' prefix
-        
-        try:
-            # Parse the tool name and parameters
-            if '(' not in tool_str or ')' not in tool_str:
-                print("Invalid format. Use: run-tool tool_name(param1='value1', param2='value2')")
-                return True
-                
-            tool_name = tool_str[:tool_str.find('(')].strip()
-            params_str = tool_str[tool_str.find('(')+1:tool_str.rfind(')')].strip()
-            
-            # Parse parameters (simple version, could be enhanced)
-            params = {}
-            if params_str:
-                param_pairs = params_str.split(',')
-                for pair in param_pairs:
-                    if '=' in pair:
-                        key, value = pair.split('=', 1)
-                        key = key.strip()
-                        value = value.strip()
-                        
-                        # Remove quotes if present
-                        if (value.startswith('"') and value.endswith('"')) or \
-                           (value.startswith("'") and value.endswith("'")):
-                            value = value[1:-1]
-                            
-                        params[key] = value
-            
-            # Import the client and execute the tool
-            from src.ghidra_client import GhidraMCPClient
-            client = GhidraMCPClient(config.ghidra)
-            
-            if hasattr(client, tool_name) and callable(getattr(client, tool_name)):
-                tool_func = getattr(client, tool_name)
-                print(f"\nExecuting: {tool_name}({', '.join([f'{k}=\"{v}\"' for k, v in params.items()])})")
-                result = tool_func(**params)
-                
-                print("\n============================================================")
-                print(f"Results from {tool_name}:")
-                print("============================================================")
-                
-                if isinstance(result, list):
-                    for i, item in enumerate(result):
-                        print(f"  {i+1}. {item}")
-                    print(f"Total: {len(result)} items")
-                else:
-                    print(result)
-                print("============================================================\n")
-            else:
-                print(f"Unknown tool: {tool_name}")
-        except Exception as e:
-            print(f"Error executing tool: {str(e)}")
-            
-        return True
-    elif command == 'analyze-function' or command.startswith('analyze-function '):
-        # Shortcut command to analyze a function
-        try:
-            from src.ghidra_client import GhidraMCPClient
-            client = GhidraMCPClient(config.ghidra)
-            
-            # Extract address if provided (e.g., "analyze-function 140001000")
-            address = None
-            if command.startswith('analyze-function '):
-                address = command[16:].strip()
-                if not address:
-                    address = None
-            
-            print(f"\nExecuting: analyze_function({f'address=\"{address}\"' if address else ''})")
-            result = client.analyze_function(address)
-            
-            print("\n============================================================")
-            print(f"Results from analyze_function:")
-            print("============================================================")
-            print(result)
-            print("============================================================\n")
-        except Exception as e:
-            print(f"Error analyzing function: {str(e)}")
-            
-        return True
-    elif command == 'help':
-        print("\n=== Available Commands ===")
-        print("exit, quit - Exit the application")
-        print("health - Check API health")
-        print("vector-store - Display detailed vector store information")
-        print("models - List available models")
-        print("tools - List all available Ghidra tools with parameters")
-        print("run-tool - Execute a specific tool (e.g., run-tool analyze_function(address=\"1400011a8\"))")
-        print("analyze-function [address] - Analyze current function or specified address")
-        print("memory-health - Run detailed memory system health check")
-        print("memory-stats - Display memory usage statistics")
-        print("memory-clear - Clear all session memory")
-        print("memory-vectors-on - Enable vector embeddings for RAG")
-        print("memory-vectors-off - Disable vector embeddings")
-        print("help - Display this help message")
-        print("=========================\n")
-        return True
-    elif command in ['memory-health', 'memory-check']:
-        print("Running detailed memory system health check...")
-        run_health_check(config, memory_manager)
-        return True
-    elif command == 'memory-stats':
-        display_memory_stats(memory_manager)
-        return True
-    elif command == 'memory-clear':
-        print("\nWARNING: This will delete all session history. This action cannot be undone.")
-        confirm = input("Type 'CONFIRM' to proceed: ")
-        if confirm.upper() == "CONFIRM":
-            if memory_manager.clear_all_sessions():
-                print("Memory cleared successfully")
-            else:
-                print("Failed to clear memory")
-        else:
-            print("Operation cancelled")
-        return True
-    elif command == 'memory-vectors-on':
-        toggle_vector_embeddings(config, True)
-        # Reload memory manager to apply changes
-        return True
-    elif command == 'memory-vectors-off':
-        toggle_vector_embeddings(config, False)
-        # Reload memory manager to apply changes
-        return True
-    else:
-        # For non-special commands, indicate that we should process it as a regular query
-        # The interactive_mode function will handle the actual processing with the bridge
-        return True
-
-def interactive_mode(config):
-    """
-    Run the application in interactive mode.
-    
-    Args:
-        config: The BridgeConfig instance.
-    """
-    # Import bridge here to avoid circular imports
-    from src.bridge import Bridge
-    
-    # Initialize memory manager
-    memory_manager = MemoryManager(config)
-    
-    print("\n╔════════════════════════════════════════════════════════════════════╗")
-    print("║           OGhidra - Simplified Three-Phase Architecture            ║")
-    print("║             ------------------------------------------             ║")
-    print("║                                                                    ║")
-    print("║     1. Planning Phase: Create a plan for addressing the query      ║")
-    print("║     2. Tool Calling Phase: Execute tools to gather information     ║")
-    print("║       3. Analysis Phase: Analyze results and provide answers       ║")
-    print("║                                                                    ║")
-    print("║          For more information, see README-ARCHITECTURE.md          ║")
-    print("╚════════════════════════════════════════════════════════════════════╝")
+def run_interactive_mode(bridge: Bridge, config: BridgeConfig):
+    """Run the bridge in interactive mode."""
     print("Ollama-GhidraMCP Bridge (Interactive Mode)")
-    print(f"Default model: {config.ollama.model}")
-    print("Type 'help' for a list of commands.")
+    print(f"Default model: {bridge.ollama.config.model if hasattr(bridge, 'ollama') and hasattr(bridge.ollama, 'config') else config.ollama.model}") 
+    
+    # Initialize a list to store outputs from the current session for review
+    current_session_log = []
 
     while True:
         try:
-            command = input("\nQuery (or 'exit', 'quit', 'help', 'health', 'tools', 'models', 'vector-store', etc.): ")
-            
-            # Check if this is a special command that should be handled by process_interactive_command
-            special_commands = ['exit', 'quit', 'help', 'health', 'vector-store', 'models', 'tools', 
-                               'memory-health', 'memory-check', 'memory-stats', 'memory-clear', 
-                               'memory-vectors-on', 'memory-vectors-off']
-            
-            # Also consider commands that start with specific prefixes
-            command_prefixes = ['run-tool', 'analyze-function']
-            
-            # Check if command matches any special command or prefix
-            is_special_command = (command.strip().lower() in special_commands or
-                                 any(command.strip().lower().startswith(prefix) for prefix in command_prefixes))
-            
-            if is_special_command:
-                if not process_interactive_command(command, config, memory_manager):
-                    break
-            else:
-                # Handle as a regular query to be processed by the bridge
-                print(f"Processing query: {command}")
+            user_input = input("Query (or 'exit', 'help', 'health', 'tools', 'models', 'vector-store', 'review_session', 'cag', 'analyze-function'): ") # Added cag, analyze-function
+            if not user_input:
+                continue
+
+            if user_input.lower() in ('exit', 'quit'): # Allow 'quit' as well
+                break
+            elif user_input.lower() == 'health':
+                # Check Ollama and GhidraMCP health
+                # Corrected: Use bridge.ollama and bridge.ghidra
+                ollama_health = bridge.ollama.check_health() if hasattr(bridge, 'ollama') else False
+                ghidra_health = bridge.ghidra.check_health() if hasattr(bridge, 'ghidra') else False
                 
-                # Initialize the bridge with the current config
-                try:
-                    bridge = Bridge(
-                        config=config,
-                        include_capabilities=True,
-                        max_agent_steps=config.max_steps
-                    )
-                except TypeError as e:
-                    # Handle case where Bridge constructor parameters have changed
-                    print(f"Error initializing Bridge: {e}")
-                    print("Trying fallback initialization...")
-                    bridge = Bridge(config=config)
+                print("\n=== Health Check ===")
+                print(f"Ollama API: {'OK' if ollama_health else 'NOT OK'}")
+                print(f"GhidraMCP API: {'OK' if ghidra_health else 'NOT OK'}")
+                print("====================\n")
                 
-                # Process the query using the bridge
+                # Display vector store information if CAG is enabled
+                if bridge.enable_cag and bridge.cag_manager:
+                    print("\n=== Vector Store Information ===")
+                    # Get vector store info from bridge
+                    try:
+                        vector_store_enabled = config.session_history.use_vector_embeddings if hasattr(config, 'session_history') else False
+                        print(f"Vector embeddings: {'Enabled ✅' if vector_store_enabled else 'Disabled ❌'}")
+                        
+                        if vector_store_enabled and hasattr(bridge, 'memory_manager') and bridge.memory_manager is not None:
+                            mm = bridge.memory_manager
+                            if mm.vector_store:
+                                vector_count = mm.vector_store.vectors.shape[0] if (hasattr(mm.vector_store, 'vectors') and 
+                                                                               mm.vector_store.vectors is not None) else 0
+                                print(f"Vectors available: {'Yes ✅' if vector_count > 0 else 'No ❌'}")
+                                print(f"Vector count: {vector_count}")
+                                
+                                if vector_count > 0:
+                                    print(f"Vector dimension: {mm.vector_store.vectors.shape[1]}")
+                                    # Calculate mean norm
+                                    import numpy as np
+                                    norms = np.linalg.norm(mm.vector_store.vectors, axis=1)
+                                    print(f"Mean vector norm: {float(np.mean(norms)):.4f}")
+                                    
+                                    # Show session IDs if available
+                                    if hasattr(mm.vector_store, 'get_session_ids'):
+                                        session_ids = mm.vector_store.get_session_ids()
+                                        if session_ids:
+                                            print(f"\nStored Session IDs ({len(session_ids)}):")
+                                            for i, sid in enumerate(session_ids[:5]):  # Show first 5
+                                                print(f"  {i+1}. {sid}")
+                                            if len(session_ids) > 5:
+                                                print(f"  ... and {len(session_ids) - 5} more")
+                    except Exception as e:
+                        print(f"Error displaying vector store info: {e}")
+                    
+                    print("===============================\n")
+                continue
+            elif user_input.lower() == 'vector-store':
+                # Add dedicated command for vector store inspection
+                print("\n=== Vector Store Information ===")
+                # Get vector store info from bridge
                 try:
-                    response = bridge.process_query(command)
-                    print("\nResponse:")
-                    print(response)
+                    vector_store_enabled = config.session_history.use_vector_embeddings if hasattr(config, 'session_history') else False
+                    print(f"Vector embeddings: {'Enabled ✅' if vector_store_enabled else 'Disabled ❌'}")
+                    
+                    if vector_store_enabled and hasattr(bridge, 'memory_manager') and bridge.memory_manager is not None:
+                        mm = bridge.memory_manager
+                        if mm.vector_store:
+                            vector_count = mm.vector_store.vectors.shape[0] if (hasattr(mm.vector_store, 'vectors') and 
+                                                                           mm.vector_store.vectors is not None) else 0
+                            print(f"Vectors available: {'Yes ✅' if vector_count > 0 else 'No ❌'}")
+                            print(f"Vector count: {vector_count}")
+                            
+                            if vector_count > 0:
+                                print(f"Vector dimension: {mm.vector_store.vectors.shape[1]}")
+                                # Calculate mean norm
+                                import numpy as np
+                                norms = np.linalg.norm(mm.vector_store.vectors, axis=1)
+                                print(f"Mean vector norm: {float(np.mean(norms)):.4f}")
+                                
+                                # Show session IDs if available
+                                if hasattr(mm.vector_store, 'get_session_ids'):
+                                    session_ids = mm.vector_store.get_session_ids()
+                                    if session_ids:
+                                        print(f"\nStored Session IDs ({len(session_ids)}):")
+                                        for i, sid in enumerate(session_ids):
+                                            print(f"  {i+1}. {sid}")
                 except Exception as e:
-                    print(f"Error processing query with bridge: {e}")
+                    print(f"Error displaying vector store info: {e}")
                 
-        except KeyboardInterrupt:
-            print("\nExiting interactive mode.")
+                print("===============================\n")
+                continue
+            elif user_input.lower() == 'models':
+                # List available models
+                # Corrected: Use bridge.ollama
+                models = bridge.ollama.list_models() if hasattr(bridge, 'ollama') else []
+                
+                print("\n=== Available Models ===")
+                for model in models:
+                    print(f"- {model}")
+                print("========================\n")
+                continue
+            elif user_input.lower() == 'tools':
+                # Display all available Ghidra tools and their parameters
+                print("\n=== Available Ghidra Tools ===")
+                
+                try:
+                    # Corrected: Use bridge.ghidra
+                    client = bridge.ghidra if hasattr(bridge, 'ghidra') else GhidraMCPClient(config.ghidra) # Fallback if bridge.ghidra not init
+                    
+                    # Get all public methods (excluding those starting with _ and known non-tools)
+                    non_tool_methods = ['check_health', 'get_config', 'is_mock_mode', 'base_url', 'timeout', 'api_path', 'extended_url']
+                    tools = [name for name in dir(client) if not name.startswith('_') and callable(getattr(client, name)) and name not in non_tool_methods]
+                    
+                    print(f"Found {len(tools)} available tools (via run-tool command):\n")
+                    
+                    for tool_name in sorted(tools):
+                        tool_func = getattr(client, tool_name)
+                        import inspect
+                        signature = inspect.signature(tool_func)
+                        params_desc = []
+                        for param_name, param in signature.parameters.items():
+                            if param_name == 'self': continue
+                            if param.default is inspect.Parameter.empty:
+                                params_desc.append(f"{param_name} (required)")
+                            else:
+                                default_val_str = f"\'{param.default}\'" if isinstance(param.default, str) else str(param.default)
+                                params_desc.append(f"{param_name}={default_val_str}")
+                        
+                        doc = tool_func.__doc__.strip().split('\n')[0] if tool_func.__doc__ else "No description available"
+                        print(f"  {tool_name}({', '.join(params_desc)})")
+                        print(f"    {doc}")
+                        print()
+                except Exception as e:
+                    print(f"Error loading tools: {str(e)}")
+                print("===========================\n")
+                continue
+            elif user_input.lower() == 'cag': # Restored CAG command
+                print("\n=== CAG Status ===")
+                # Use bridge.enable_cag for the overall status
+                print(f"CAG System Enabled: {'Yes' if bridge.enable_cag else 'No'}")
+                
+                if bridge.enable_cag and bridge.cag_manager:
+                    # Get detailed info from the CAGManager
+                    cag_details = bridge.cag_manager.get_debug_info()
+                    
+                    # Knowledge Base status from cag_details
+                    kb_enabled = cag_details.get('enable_kb', False)
+                    print(f"Knowledge Base Enabled (within CAG): {'Yes' if kb_enabled else 'No'}")
+                    if kb_enabled and 'vector_store' in cag_details:
+                        vs_info = cag_details['vector_store']
+                        print(f"  Vector Store - Function Signatures: {vs_info.get('function_signatures', 0)}")
+                        print(f"  Vector Store - Binary Patterns: {vs_info.get('binary_patterns', 0)}")
+                        print(f"  Vector Store - Analysis Rules: {vs_info.get('analysis_rules', 0)}")
+                        print(f"  Vector Store - Common Workflows: {vs_info.get('common_workflows', 0)}")
+
+                    # Session Cache status from cag_details
+                    session_cache_info = cag_details.get('session_cache')
+                    if session_cache_info:
+                        print(f"Session Cache Active: {'Yes' if session_cache_info else 'No'}")
+                        print(f"  Session ID: {session_cache_info.get('session_id', 'N/A')}")
+                        print(f"  Context History Items: {session_cache_info.get('context_history', 0)}")
+                        print(f"  Decompiled Functions: {session_cache_info.get('decompiled_functions', 0)}")
+                        print(f"  Renamed Entities: {session_cache_info.get('renamed_entities', 0)}")
+                        print(f"  Analysis Results Cached: {session_cache_info.get('analysis_results', 0)}")
+                    else:
+                        print(f"Session Cache Active: No")
+                    
+                    # Token limit is part of BridgeConfig, not CAGManager debug info directly
+                    # However, the cag_manager might have its own internal token limits for enhancement logic
+                    # For now, we assume the relevant token limit for display is from the main config if needed.
+                    # If cag_manager.config.token_limit exists, it could be displayed, but let's rely on BridgeConfig for overall settings.
+                    if hasattr(bridge.config, 'cag_token_limit'): # Assuming token_limit is in BridgeConfig.cag_token_limit
+                         print(f"CAG Token Limit (config): {bridge.config.cag_token_limit}")
+
+                elif not bridge.enable_cag:
+                    print("CAG System is disabled in the bridge configuration.")
+                else: # bridge.enable_cag is true but no cag_manager (should not happen if init is correct)
+                    print("CAG System is enabled but the manager is not available.")
+                print("=================\n")
+                continue
+            elif user_input.lower() == 'help': # Restored help command
+                print("\n=== Available Commands ===")
+                print("exit, quit                            - Exit the application")
+                print("health                                - Check API health and vector store status")
+                print("vector-store                          - Display detailed vector store information")
+                print("models                                - List available Ollama models")
+                print("tools                                 - List all available Ghidra tools with parameters")
+                print("run-tool tool_name(p1='v1', p2='v2')  - Execute a specific Ghidra tool directly")
+                print("analyze-function [address]            - Analyze current function or specified address (shortcut)")
+                print("review_session                        - Ask a query about the current session's interactions")
+                print("clear_log                             - Clear the in-memory log for the current session review")
+                print("cag                                   - Display Context-Aware Generation status")
+                print("help                                  - Display this help message")
+                print("Any other input will be treated as a query to the AI agent.")
+                print("=========================\n")
+                continue
+            elif user_input.lower().startswith('run-tool '):
+                # Execute a specific tool directly
+                tool_str = user_input[9:].strip()  # Remove 'run-tool ' prefix
+                
+                TOOLS_WITH_AI_ANALYSIS = [
+                    "analyze_function", 
+                    "decompile_function", "decompile_function_by_address",
+                    "list_functions", 
+                    "list_imports", 
+                    "list_exports", 
+                    "list_strings"
+                ]
+
+                try:
+                    if '(' not in tool_str or ')' not in tool_str:
+                        print("\nInvalid format. Use: run-tool tool_name(param1='value1', param2='value2')\n")
+                        continue
+                        
+                    tool_name = tool_str[:tool_str.find('(')].strip()
+                    raw_params_str = tool_str[tool_str.find('(')+1:tool_str.rfind(')')].strip()
+                    
+                    params = {}
+                    if raw_params_str:
+                        # Improved parameter parsing to handle various types and quotes robustly
+                        param_pairs = []
+                        buffer = ""
+                        in_quotes = False
+                        quote_char = ''
+                        paren_level = 0
+                        for char in raw_params_str:
+                            if char == ',' and not in_quotes and paren_level == 0:
+                                param_pairs.append(buffer)
+                                buffer = ""
+                                continue
+                            buffer += char
+                            if char in ('"', "'"):
+                                if not in_quotes:
+                                    in_quotes = True
+                                    quote_char = char
+                                elif char == quote_char: # Closing quote
+                                    # Check if this quote is escaped
+                                    if buffer.endswith(f'\\\\{quote_char}'): # Check for escaped quote like \\" or \\'
+                                        pass # It's an escaped quote, part of the string
+                                    else:
+                                        in_quotes = False
+                                        quote_char = ''
+                            elif char == '(' and not in_quotes:
+                                paren_level +=1
+                            elif char == ')' and not in_quotes:
+                                paren_level -=1
+                        param_pairs.append(buffer) # Add the last parameter
+
+                        for pair in param_pairs:
+                            if '=' in pair:
+                                key, value_str_full = pair.split('=', 1)
+                                key = key.strip()
+                                value_str_from_pair = value_str_full.strip()
+                                
+                                if (value_str_from_pair.startswith("'") and value_str_from_pair.endswith("'")) or \
+                                   (value_str_from_pair.startswith('"') and value_str_from_pair.endswith('"')):
+                                    final_value_for_param = value_str_from_pair[1:-1].encode('utf-8').decode('unicode_escape') # Handle escapes
+                                else: # Try to infer type for unquoted values
+                                    if value_str_from_pair.lower() == "true": final_value_for_param = True
+                                    elif value_str_from_pair.lower() == "false": final_value_for_param = False
+                                    elif value_str_from_pair.lower() == "none": final_value_for_param = None
+                                    elif value_str_from_pair.isdigit(): # Positive integers
+                                        final_value_for_param = int(value_str_from_pair)
+                                    elif value_str_from_pair.startswith('-') and value_str_from_pair[1:].isdigit(): # Negative integers
+                                        final_value_for_param = int(value_str_from_pair)
+                                    else: # Default to string if no other type matches
+                                        try: # Check for float
+                                            final_value_for_param = float(value_str_from_pair)
+                                        except ValueError:
+                                            final_value_for_param = value_str_from_pair # Fallback to string
+                                params[key] = final_value_for_param
+                    
+                    # Corrected: Use bridge.ghidra
+                    if hasattr(bridge.ghidra, tool_name):
+                        tool_method = getattr(bridge.ghidra, tool_name)
+                        
+                        params_for_log = ', '.join([f'{k}={repr(v)}' for k, v in params.items()])
+                        bridge.logger.info(f"Executing direct tool call via 'run-tool': {tool_name} with params: {params}")
+                        raw_tool_result = tool_method(**params)
+
+                        if tool_name in TOOLS_WITH_AI_ANALYSIS:
+                            is_error = isinstance(raw_tool_result, str) and raw_tool_result.lower().startswith("error:")
+                            
+                            if not is_error:
+                                formatted_tool_data = ""
+                                if isinstance(raw_tool_result, dict) or isinstance(raw_tool_result, list):
+                                    try:
+                                        formatted_tool_data = json.dumps(raw_tool_result, indent=2)
+                                    except TypeError: # Handle non-serializable data
+                                        formatted_tool_data = str(raw_tool_result)
+                                else:
+                                    formatted_tool_data = str(raw_tool_result)
+                            
+                                print(f"\n=== Raw Output from {tool_name} (to be sent to AI) ===")
+                                print(formatted_tool_data)
+                                print("===========================================================")
+                                current_session_log.append(f"=== Raw Output from {tool_name}({params_for_log}) ===\\n{formatted_tool_data}\\n")
+
+                                analysis_prompt = None
+                                if tool_name == "analyze_function":
+                                    analysis_prompt = (
+                                        f"The Ghidra tool '{tool_name}' was executed (parameters: {params_for_log}). "
+                                        f"Its output is below. Based *only* on this provided data:\\n"
+                                        f"1. Identify the primary function being analyzed (name and address).\\n"
+                                        f"2. Summarize its apparent purpose or main actions based on decompiled code snippets and called functions.\\n"
+                                        f"3. List any notable cross-references (calls to other functions, or data references) mentioned in the output.\\n"
+                                        f"4. Point out any immediate observations a reverse engineer might find interesting (e.g., unusual patterns, specific API calls, complex logic, potential vulnerabilities like buffer overflows, format string bugs, etc.).\\n"
+                                        f"Tool Output:\\n```json\\n{formatted_tool_data}\\n```"
+                                    )
+                                elif tool_name in ["decompile_function", "decompile_function_by_address"]:
+                                    func_id = params.get('name', params.get('address', 'unknown function'))
+                                    analysis_prompt = (
+                                        f"The Ghidra tool '{tool_name}' was executed for function '{func_id}'. Its output (decompiled C code) is below. "
+                                        f"Based *only* on this provided code:\\n"
+                                        f"1. Provide a concise summary of the function's apparent purpose in one or two sentences.\\n"
+                                        f"2. List any parameters and the inferred return type if visible.\\n"
+                                        f"3. Identify any notable loops, conditional statements, or complex logic.\\n"
+                                        f"4. Are there any calls to other functions or standard library functions? If so, list a few key ones and their likely purpose in this context.\\n"
+                                        f"5. Are there any obvious security concerns (e.g., use of unsafe functions like strcpy, potential buffer overflows, format string vulnerabilities, hardcoded secrets)?\\n"
+                                        f"Tool Output:\\n```c\\n{formatted_tool_data}\\n```"
+                                    )
+                                elif tool_name == "list_functions":
+                                    analysis_prompt = (
+                                        f"The Ghidra tool '{tool_name}' was executed. Its output (a list of functions) is below. "
+                                        f"Based *only* on this provided data:\\n"
+                                        f"1. How many functions are listed in this segment of the output?\\n"
+                                        f"2. Are there any common prefixes or naming patterns observed in the function names (e.g., FUN_, LAB_, sub_, user_defined_)?\\n"
+                                        f"3. List 5-10 function names that seem particularly interesting or suggestive of the program's core functionality (e.g., 'encrypt_data', 'network_send', 'parse_input', 'main').\\n"
+                                        f"4. Are there any functions that suggest error handling or utility routines?\\n"
+                                        f"Tool Output:\\n```json\\n{formatted_tool_data}\\n```"
+                                    )
+                                elif tool_name == "list_imports":
+                                    analysis_prompt = (
+                                        f"The Ghidra tool '{tool_name}' was executed. Its output (a list of imported functions/symbols and their source libraries) is below. "
+                                        f"Based *only* on this provided data:\\n"
+                                        f"1. What are the top 3-5 DLLs (libraries) from which functions are most frequently imported, if discernible? List them.\\n"
+                                        f"2. For each of these top DLLs, list 2-3 example functions imported from it.\\n"
+                                        f"3. Based on the imported functions, what are some general capabilities this program likely possesses (e.g., file I/O, network communication, cryptography, UI interaction, registry access)?\\n"
+                                        f"4. Are there any specific imported functions that might be particularly interesting or suspicious from a security or reverse engineering perspective (e.g., related to encryption, process injection, anti-debugging, networking)? List a few and briefly state why.\\n"
+                                        f"Tool Output:\\n```json\\n{formatted_tool_data}\\n```"
+                                    )
+                                elif tool_name == "list_exports":
+                                    analysis_prompt = (
+                                        f"The Ghidra tool '{tool_name}' was executed. Its output (a list of exported functions/symbols) is below. "
+                                        f"This indicates functions that the binary makes available for other modules to call. Based *only* on this provided data:\\n"
+                                        f"1. How many functions/symbols are exported in this segment of the output?\\n"
+                                        f"2. List 3-5 exported names that seem most significant or indicative of the library's/program's primary purpose.\\n"
+                                        f"3. Do any of the export names suggest this is a library (DLL/SO) providing an API, or an executable with specific entry points?\\n"
+                                        f"4. Are there any names that look like standard C/C++ mangled names, or are they mostly human-readable?\\n"
+                                        f"Tool Output:\\n```json\\n{formatted_tool_data}\\n```"
+                                    )
+                                elif tool_name == "list_strings":
+                                    analysis_prompt = f"""The Ghidra tool '{tool_name}' was executed. Its output (a list of strings found in the binary) is below. 
+Based *only* on this provided data:
+1. Are there any strings in this segment of output that look like file paths, URLs, or IP addresses?
+2. Are there any error messages or debug messages shown?
+3. Are there any strings shown that suggest user interface elements (e.g., button labels, menu items)?
+4. Do any strings shown hint at specific functionalities (e.g., "Enter password", "Encryption key", "Connecting to server...")?
+5. Are there any unusual or obfuscated-looking strings in this segment?
+6. Most importantly, are there any malicious or suspicious strings?
+7. What can we infer about the behavior of the binary based on the strings?
+Tool Output:
+```json
+{formatted_tool_data}
+```"""
+                                
+                                if analysis_prompt:
+                                    print(f"Sending output from {tool_name} to AI for analysis...")
+                                    try:
+                                        ai_analysis = bridge.ollama.generate(prompt=analysis_prompt)
+                                        
+                                        bridge.logger.info(f"AI analysis received snippet: '{ai_analysis[:50]}...'")
+                                        print(f"DEBUG: AI Response Type: {type(ai_analysis)}, Is None: {ai_analysis is None}, Is Empty Str: {ai_analysis == ''}, Length: {len(ai_analysis) if ai_analysis else 0}")
+
+                                        if ai_analysis and ai_analysis.strip():
+                                            print("\n=== AI Analysis of Function Output ===")
+                                            print(ai_analysis)
+                                            print("=====================================")
+                                            current_session_log.append(f"=== AI Analysis of {tool_name}({params_for_log}) ===\\n{ai_analysis}\\n")
+                                        else:
+                                            print("\nAI analysis returned empty or whitespace-only response.")
+                                            current_session_log.append(f"=== AI Analysis of {tool_name}({params_for_log}) returned empty. ===\\n")
+
+                                    except Exception as e:
+                                        print(f"Error during AI analysis: {e}")
+                                        bridge.logger.error(f"Error during AI analysis for {tool_name}: {e}", exc_info=True)
+                                        current_session_log.append(f"=== Error during AI analysis of {tool_name}({params_for_log}): {e} ===\\n")
+                                else:
+                                    print(f"No specific AI analysis prompt configured for tool: {tool_name}. Raw output printed above.")
+                            else: # Error in raw_tool_result
+                                print(f"Error from tool {tool_name}: {raw_tool_result}")
+                                current_session_log.append(f"=== Error from tool {tool_name}({params_for_log}): {raw_tool_result} ===\\n")
+                        else: # Tool not in TOOLS_WITH_AI_ANALYSIS or tool execution error already handled
+                             print(f"\nResult of {tool_name}({raw_params_str}):\\n{raw_tool_result}\\n") # Print raw result if no AI analysis
+                             current_session_log.append(f"=== Result of {tool_name}({params_for_log}) ===\\n{raw_tool_result}\\n")
+                    else:
+                        print(f"\nUnknown tool: {tool_name}. Type 'tools' for a list of available tools.\\n")
+                        
+                except Exception as e:
+                    print(f"Error executing tool: {e}")
+                    bridge.logger.error(f"Error executing tool '{tool_str}': {e}", exc_info=True)
+                    current_session_log.append(f"=== Error executing tool command '{tool_str}': {e} ===\\n")
+            
+            elif user_input.lower().startswith('analyze-function'): # Restored analyze-function shortcut
+                try:
+                    address = None
+                    # Define TOOLS_WITH_AI_ANALYSIS here or ensure it's accessible
+                    # For this edit, let's define it locally if not already in scope
+                    # Or better, ensure it's defined at a higher scope if used in multiple places
+                    TOOLS_WITH_AI_ANALYSIS = [
+                        "analyze_function", 
+                        "decompile_function", "decompile_function_by_address",
+                        "list_functions", 
+                        "list_imports", 
+                        "list_exports", 
+                        "list_strings"
+                    ]
+
+                    if user_input.lower().startswith('analyze-function '):
+                        address_part = user_input[len('analyze-function '):].strip()
+                        if address_part: # Ensure address_part is not empty
+                            address = address_part
+                    
+                    params_for_log = f"address={repr(address)}" if address else ""
+                    print(f"\nExecuting: analyze_function({f'address=\\"{address}\\"' if address else ''})")
+                    
+                    raw_tool_result = bridge.ghidra.analyze_function(address=address) if hasattr(bridge, 'ghidra') else "Ghidra client not available."
+                    
+                    print("\n============================================================")
+                    print(f"Results from analyze_function:")
+                    print("============================================================")
+                    current_session_log.append(f"=== Result of analyze-function({params_for_log}) ===\\n{raw_tool_result}\\n")
+                    print(raw_tool_result) # Print raw output
+                    print("============================================================\n")
+
+                    # AI Analysis Step for analyze-function shortcut
+                    if raw_tool_result != "Ghidra client not available." and not (isinstance(raw_tool_result, str) and raw_tool_result.lower().startswith("error:")):
+                        formatted_tool_data = ""
+                        if isinstance(raw_tool_result, dict) or isinstance(raw_tool_result, list):
+                            try:
+                                formatted_tool_data = json.dumps(raw_tool_result, indent=2)
+                            except TypeError:
+                                formatted_tool_data = str(raw_tool_result)
+                        else:
+                            formatted_tool_data = str(raw_tool_result)
+
+                        analysis_prompt = (
+                            f"The Ghidra tool 'analyze_function' was executed with parameters: ({params_for_log}). "
+                            f"Its output is below. Based *only* on this provided data:\\n"
+                            f"1. Identify the primary function being analyzed (name and address).\\n"
+                            f"2. Summarize its apparent purpose or main actions based on decompiled code snippets and called functions.\\n"
+                            f"3. List any notable cross-references (calls to other functions, or data references) mentioned in the output.\\n"
+                            f"4. Point out any immediate observations a reverse engineer might find interesting (e.g., unusual patterns, specific API calls, complex logic, potential vulnerabilities like buffer overflows, format string bugs, etc.).\\n"
+                            f"Tool Output:\\n```json\\n{formatted_tool_data}\\n```"
+                        )
+                        
+                        print(f"Sending output from analyze-function to AI for analysis...")
+                        try:
+                            ai_analysis = bridge.ollama.generate(prompt=analysis_prompt)
+                            
+                            bridge.logger.info(f"AI analysis received snippet: '{ai_analysis[:50]}...'")
+                            # print(f"DEBUG: AI Response Type: {type(ai_analysis)}, Is None: {ai_analysis is None}, Is Empty Str: {ai_analysis == ''}, Length: {len(ai_analysis) if ai_analysis else 0}")
+
+                            if ai_analysis and ai_analysis.strip():
+                                print("\n=== AI Analysis of Function Output ===")
+                                print(ai_analysis)
+                                print("=====================================")
+                                current_session_log.append(f"=== AI Analysis of analyze-function({params_for_log}) ===\\n{ai_analysis}\\n")
+                            else:
+                                print("\nAI analysis returned empty or whitespace-only response.")
+                                current_session_log.append(f"=== AI Analysis of analyze-function({params_for_log}) returned empty. ===\\n")
+
+                        except Exception as e:
+                            print(f"Error during AI analysis: {e}")
+                            bridge.logger.error(f"Error during AI analysis for analyze-function shortcut: {e}", exc_info=True)
+                            current_session_log.append(f"=== Error during AI analysis of analyze-function({params_for_log}): {e} ===\\n")
+                    elif isinstance(raw_tool_result, str) and raw_tool_result.lower().startswith("error:"):
+                         print(f"Skipping AI analysis due to tool error: {raw_tool_result}")
+                    
+                except Exception as e:
+                    print(f"Error analyzing function: {str(e)}")
+                    bridge.logger.error(f"Error in 'analyze-function' shortcut: {e}", exc_info=True)
+                    current_session_log.append(f"=== Error in analyze-function shortcut: {e} ===\\n")
+                continue # Keep continue for now, as this block is self-contained for analysis
+
+            elif user_input.lower() == 'review_session':
+                if not current_session_log:
+                    print("\nNo interactions yet in this session to review.")
+                    continue
+
+                review_query = input("What would you like to ask about the work done in this session? (Type 'cancel' to abort): ")
+                if not review_query or review_query.lower() == 'cancel':
+                    print("Session review cancelled.")
+                    continue
+
+                print("\nCompiling session log for review...")
+                session_context_str = "\n\n".join(current_session_log)
+                
+                review_prompt = (
+                    f"You are an AI assistant. The user has been interacting with Ghidra tools in the current session. "
+                    f"Below is a chronological log of the raw tool outputs and any subsequent AI analyses performed on those outputs. "
+                    f"Please carefully review this entire session context to answer the user's question about the session.\\n\\n"
+                    f"=============== BEGIN SESSION CONTEXT ===============\\n"
+                    f"{session_context_str}\\n"
+                    f"================ END SESSION CONTEXT ================\\n\\n"
+                    f"USER'S QUESTION ABOUT THIS SESSION:\\n{review_query}\\n\\n"
+                    f"Based on the provided session context, please provide a comprehensive answer to the user's question:"
+                )
+
+                print("Sending session context and query to AI for review...")
+                try:
+                    # Ensure bridge.ollama is used
+                    ai_review_response = bridge.ollama.generate(prompt=review_prompt) if hasattr(bridge, 'ollama') else "Ollama client not available."
+                    if ai_review_response and ai_review_response.strip() and ai_review_response != "Ollama client not available.":
+                        print("\n=== AI Review of Session ===")
+                        print(ai_review_response)
+                        print("============================")
+                    elif ai_review_response == "Ollama client not available.":
+                         print(f"\n{ai_review_response}")
+                    else:
+                        print("\nAI review returned an empty or whitespace-only response.")
+                except Exception as e:
+                    print(f"Error during AI session review: {e}")
+                    bridge.logger.error(f"Error during AI session review: {e}", exc_info=True)
+
+            elif user_input.lower() == 'clear_log': 
+                current_session_log.clear()
+                print("Current session log cleared.")
+            
+            else:
+                # Default to sending the query to the bridge for a general response
+                # Ensure bridge.process_query is used
+                try:
+                    if hasattr(bridge, 'process_query'):
+                        print("\nProcessing query with AI agent...")
+                        result = bridge.process_query(user_input) # Assumes bridge has process_query
+                        print("\n=== AI Agent Response ===")
+                        print(result)
+                        print("=========================\n")
+                        current_session_log.append(f"=== AI Agent Response to Query: '{user_input}' ===\\n{result}\\n")
+                    else:
+                        print("\nBridge does not have process_query method. Cannot process general query.")
+                        current_session_log.append(f"=== Attempted general query (not processed): '{user_input}' ===\\n")
+
+                except Exception as e:
+                    bridge.logger.error(f"Error processing query: {e}", exc_info=True)
+                    print(f"\nError processing query: {type(e).__name__} - {e}\n")
+                    current_session_log.append(f"=== Error processing query '{user_input}': {e} ===\\n")
+
+        except (KeyboardInterrupt, EOFError):
+            print("\nExiting...")
             break
-        except Exception as e:
-            print(f"Error processing command: {e}")
+        except Exception as e: # Catch-all for other unexpected errors in the loop
+            print(f"An unexpected error occurred in the interactive loop: {e}")
+            bridge.logger.error(f"Unexpected error in interactive loop: {e}", exc_info=True)
+            # Optionally, decide if you want to break or continue
+            # break 
 
 def main():
-    """Main entry point."""
-    args = parse_args()
+    """Main entry point for the Ollama-GhidraMCP Bridge CLI."""
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Bridge between Ollama and GhidraMCP for binary analysis")
+    parser.add_argument("--interactive", "-i", action="store_true", help="Enable interactive mode")
+    parser.add_argument("--query", "-q", type=str, help="Single query to execute (non-interactive mode)")
+    parser.add_argument("--include-capabilities", "-c", action="store_true", 
+                       help="Include tool capabilities in the prompt (may use more tokens)")
+    parser.add_argument("--disable-cag", action="store_true", 
+                       help="Disable Cache-Augmented Generation (CAG)")
     
-    # Set log level from arguments or environment
-    if args.log_level:
-        os.environ["LOG_LEVEL"] = args.log_level
-        
-    # Configure based on arguments and environment variables
-    config = BridgeConfig.from_env() # Load defaults and other env vars first
+    args = parser.parse_args()
     
-    # Override with command line arguments
-    if args.ollama_url:
-        config.ollama.base_url = args.ollama_url
-    if args.ghidra_url:
-        config.ghidra.base_url = args.ghidra_url
-    if args.model:
-        config.ollama.model = args.model
-    if args.mock:
-        config.ghidra.mock_mode = True
+    # Check if we have a query or interactive mode
+    if not args.interactive and not args.query:
+        parser.print_help()
+        return
     
-    # Override configuration from command-line arguments
-    if args.enable_vector_embeddings:
-        config.session_history.use_vector_embeddings = True
-        logger.info("Vector embeddings enabled")
+    # Load configuration from environment
+    config = BridgeConfig.from_env()
     
-    if args.disable_vector_embeddings:
-        config.session_history.use_vector_embeddings = False
-        logger.info("Vector embeddings disabled")
-    
+    # Override CAG settings from command line if specified
     if args.disable_cag:
         config.cag_enabled = False
-        logger.info("Context-Aware Generation (CAG) disabled")
     
-    # Initialize memory manager
-    memory_manager = MemoryManager(config)
-    
-    # Handle interactive mode
-    if args.interactive:
-        interactive_mode(config)
-        return
-    
-    # Handle memory-specific commands
-    if args.clear_memory:
-        print("WARNING: This will delete all session history. This action cannot be undone.")
-        confirm = input("Type 'CONFIRM' to proceed: ")
-        if confirm.upper() == "CONFIRM":
-            if memory_manager.clear_all_sessions():
-                print("Memory cleared successfully")
-            else:
-                print("Failed to clear memory")
-        else:
-            print("Operation cancelled")
-        return
-    
-    if args.memory_stats:
-        display_memory_stats(memory_manager)
-        return
-    
-    if args.check_memory:
-        run_health_check(config, memory_manager)
-        return
-    
-    # Initialize the bridge (ensure this uses the potentially updated config)
+    # Create the bridge
     bridge = Bridge(
-        config=config,
+        config=config, 
         include_capabilities=args.include_capabilities,
-        max_agent_steps=config.max_steps # This should now use the value from .env via config
+        max_agent_steps=config.max_steps,
+        enable_cag=config.cag_enabled
     )
     
-    # Health check for Ollama and GhidraMCP
-    # ... rest of the main() function ...
-
-    # Start the main application
-    start_bridge(config, memory_manager)
-
-def start_bridge(config, memory_manager):
-    """Start the Ollama-GhidraMCP Bridge."""
-    # This is a placeholder for the actual bridge startup code
-    try:
-        logger.info("Starting Ollama-GhidraMCP Bridge")
-        logger.info(f"Using Ollama model: {config.ollama.model}")
-        logger.info(f"GhidraMCP URL: {config.ghidra.base_url}")
-        
-        if config.session_history.enabled:
-            logger.info(f"Session history enabled, storage path: {config.session_history.storage_path}")
-            logger.info(f"Memory system loaded {memory_manager.get_session_count()} sessions")
-            
-            if config.session_history.use_vector_embeddings:
-                vector_count = 0
-                if memory_manager.vector_store:
-                    vector_count = memory_manager.vector_store.vectors.shape[0] if memory_manager.vector_store.vectors is not None else 0
-                logger.info(f"Vector embeddings enabled, {vector_count} vectors loaded")
-        
-        # Your actual bridge startup code would go here
-        print("\nBridge is running. Press Ctrl+C to stop.\n")
-        
-        # Keep the application running
-        try:
-            while True:
-                # In a real application, you would have your main loop here
-                # This is just a placeholder to keep the app running
-                import time
-                time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Shutting down bridge")
+    # Print header
+    print_header()
     
-    except Exception as e:
-        logger.exception(f"Error starting bridge: {e}")
-        sys.exit(1)
+    if args.interactive:
+        run_interactive_mode(bridge, config)
+    else:
+        # Single query mode
+        result = bridge.process_query(args.query)
+        print(result)
 
 if __name__ == "__main__":
-    main() 
+    sys.exit(main()) 
