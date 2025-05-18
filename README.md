@@ -129,6 +129,22 @@ When running OGhidra in interactive mode (`python src/main.py --interactive`), y
 
 These commands leverage the underlying GhidraMCP functionalities and the AI's analytical capabilities to provide insights into the binary.
 
+
+## Example of hardcoded AI features: 
+
+
+'run-tool list_imports()'
+
+![listingimports](https://github.com/user-attachments/assets/f91cebb5-4ff6-4ddc-8d1f-a1db00b65625)
+![listingimports2](https://github.com/user-attachments/assets/5eb8306e-1854-43a2-8400-c266e91bf97e)
+
+
+'run-tool list_strings()'
+
+![liststrings1](https://github.com/user-attachments/assets/c599f57a-392a-46e7-9de8-8a517ee85aba)
+![liststrings2](https://github.com/user-attachments/assets/04198fcb-2e12-4e18-abc0-0ba3f82ccdb5)
+
+
 **Single Query:**
 
 ```bash
