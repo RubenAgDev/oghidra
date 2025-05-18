@@ -129,6 +129,11 @@ When running OGhidra in interactive mode (`python src/main.py --interactive`), y
 
 These commands leverage the underlying GhidraMCP functionalities and the AI's analytical capabilities to provide insights into the binary.
 
+**Single Query:**
+
+```bash
+python src/main.py "Your analysis query here"
+```
 
 ## Example of hardcoded AI features: 
 
@@ -144,12 +149,6 @@ These commands leverage the underlying GhidraMCP functionalities and the AI's an
 ![liststrings1](https://github.com/user-attachments/assets/c599f57a-392a-46e7-9de8-8a517ee85aba)
 ![liststrings2](https://github.com/user-attachments/assets/04198fcb-2e12-4e18-abc0-0ba3f82ccdb5)
 
-
-**Single Query:**
-
-```bash
-python src/main.py "Your analysis query here"
-```
 
 ## Configuration Details
 
@@ -211,6 +210,7 @@ See `README-CAG.md` (now incorporated here) for more details.
 
 ## Testing
 
+*   Below is AI AI-generated nonsense just run 'python main.py --interactive' and type 'health' to check whats available and whats missing. 
 *   **Extended API Server Tests**: `python -m unittest src/test_extended_api.py` (Ensure the extended server is running).
 *   **Bridge/Normalization Tests**: Check `tests/` directory (e.g., `test_command_normalization.py`, `test_bridge.py`). Run relevant tests using `unittest`.
 *   **Memory Sample Data**: `python src/generate_sample_data.py` (See memory docs for options).
