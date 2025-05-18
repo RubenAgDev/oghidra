@@ -402,7 +402,7 @@ class Bridge:
         
         return ""
 
-    def _check_command_exists(self, command_name: str) -> Tuple[bool, str, List[str]]:
+    def _check_command_exists(self, command_name: str) -> Tuple[bool, str, List[str], List[str]]:
         """
         Check if a command exists and provide suggestions if it doesn't.
         
@@ -410,17 +410,19 @@ class Bridge:
             command_name: The command name to check
             
         Returns:
-            Tuple of (exists, error_message, similar_commands)
+            Tuple of (exists, error_message, similar_commands, all_available_commands)
         """
         normalized_command = self._normalize_command_name(command_name)
-        if normalized_command:
-            return True, "", []
-            
-        # Command not found, provide helpful suggestions
         available_commands = [
             name for name in dir(self.ghidra_client) 
             if not name.startswith('_') and callable(getattr(self.ghidra_client, name))
         ]
+        
+        if normalized_command:
+            return True, "", [], available_commands # Return all commands even if found
+            
+        # Command not found, provide helpful suggestions
+        # available_commands already computed above
         
         # Find similar commands
         similar_commands = []
@@ -439,7 +441,7 @@ class Bridge:
             suggestion_msg = "\nThere is no 'disassemble' command. Try 'decompile_function_by_address(address=\"1400011a8\")' instead."
             
         error_message = f"Unknown command: {command_name}{suggestion_msg}"
-        return False, error_message, similar_commands
+        return False, error_message, similar_commands, available_commands
 
     def _normalize_command_params(self, command_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -510,9 +512,18 @@ class Bridge:
             # Normalize command name and parameters
             normalized_command = self._normalize_command_name(command_name)
             if not normalized_command:
-                exists, error_message, similar_commands = self._check_command_exists(command_name)
+                exists, error_message, similar_commands, all_available_commands = self._check_command_exists(command_name)
                 if not exists:
-                    raise ValueError(error_message)
+                    # Construct the enhanced error message with the list of all tools
+                    tools_list_str = "\nAvailable Ghidra Tools:\n"
+                    if all_available_commands:
+                        for i, tool in enumerate(sorted(all_available_commands)):
+                            tools_list_str += f"  - {tool}\n"
+                    else:
+                        tools_list_str += "  (Could not fetch tool list or no tools available via client introspection).\n"
+                    
+                    enhanced_unknown_command_error = f"{error_message}\n\nTo help you choose a valid tool, here is a list of available Ghidra tools:\n{tools_list_str}"
+                    raise ValueError(enhanced_unknown_command_error)
                 
             # Check for required parameters
             is_valid, error_message = self.command_parser.validate_command_parameters(

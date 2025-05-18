@@ -185,16 +185,48 @@ def run_interactive_mode(bridge: Bridge, config: BridgeConfig):
                 print("===========================\n")
                 continue
             elif user_input.lower() == 'cag': # Restored CAG command
+                print("\n=== CAG Status ===")
+                # Use bridge.enable_cag for the overall status
+                print(f"CAG System Enabled: {'Yes' if bridge.enable_cag else 'No'}")
+                
                 if bridge.enable_cag and bridge.cag_manager:
-                    info = bridge.cag_manager.get_debug_info()
-                    print("\n=== CAG Status ===")
-                    print(f"CAG Enabled: {info['enabled']}")
-                    print(f"Knowledge Cache Enabled: {info['knowledge_cache_enabled']}")
-                    print(f"Session Cache Enabled: {info['session_cache_enabled']}")
-                    print(f"Token Limit: {info['token_limit']}")
-                    print("=================\n")
-                else:
-                    print("\nCAG is disabled. Enable it with CAG_ENABLED=true in your .env file.\n")
+                    # Get detailed info from the CAGManager
+                    cag_details = bridge.cag_manager.get_debug_info()
+                    
+                    # Knowledge Base status from cag_details
+                    kb_enabled = cag_details.get('enable_kb', False)
+                    print(f"Knowledge Base Enabled (within CAG): {'Yes' if kb_enabled else 'No'}")
+                    if kb_enabled and 'vector_store' in cag_details:
+                        vs_info = cag_details['vector_store']
+                        print(f"  Vector Store - Function Signatures: {vs_info.get('function_signatures', 0)}")
+                        print(f"  Vector Store - Binary Patterns: {vs_info.get('binary_patterns', 0)}")
+                        print(f"  Vector Store - Analysis Rules: {vs_info.get('analysis_rules', 0)}")
+                        print(f"  Vector Store - Common Workflows: {vs_info.get('common_workflows', 0)}")
+
+                    # Session Cache status from cag_details
+                    session_cache_info = cag_details.get('session_cache')
+                    if session_cache_info:
+                        print(f"Session Cache Active: {'Yes' if session_cache_info else 'No'}")
+                        print(f"  Session ID: {session_cache_info.get('session_id', 'N/A')}")
+                        print(f"  Context History Items: {session_cache_info.get('context_history', 0)}")
+                        print(f"  Decompiled Functions: {session_cache_info.get('decompiled_functions', 0)}")
+                        print(f"  Renamed Entities: {session_cache_info.get('renamed_entities', 0)}")
+                        print(f"  Analysis Results Cached: {session_cache_info.get('analysis_results', 0)}")
+                    else:
+                        print(f"Session Cache Active: No")
+                    
+                    # Token limit is part of BridgeConfig, not CAGManager debug info directly
+                    # However, the cag_manager might have its own internal token limits for enhancement logic
+                    # For now, we assume the relevant token limit for display is from the main config if needed.
+                    # If cag_manager.config.token_limit exists, it could be displayed, but let's rely on BridgeConfig for overall settings.
+                    if hasattr(bridge.config, 'cag_token_limit'): # Assuming token_limit is in BridgeConfig.cag_token_limit
+                         print(f"CAG Token Limit (config): {bridge.config.cag_token_limit}")
+
+                elif not bridge.enable_cag:
+                    print("CAG System is disabled in the bridge configuration.")
+                else: # bridge.enable_cag is true but no cag_manager (should not happen if init is correct)
+                    print("CAG System is enabled but the manager is not available.")
+                print("=================\n")
                 continue
             elif user_input.lower() == 'help': # Restored help command
                 print("\n=== Available Commands ===")
