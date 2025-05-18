@@ -210,7 +210,7 @@ See `README-CAG.md` (now incorporated here) for more details.
 
 ## Testing
 
-*   Below is AI AI-generated nonsense just run 'python main.py --interactive' and type 'health' to check whats available and whats missing. 
+*   Below is AI-generated nonsense just run 'python main.py --interactive' and type 'health' to check whats available and whats missing. 
 *   **Extended API Server Tests**: `python -m unittest src/test_extended_api.py` (Ensure the extended server is running).
 *   **Bridge/Normalization Tests**: Check `tests/` directory (e.g., `test_command_normalization.py`, `test_bridge.py`). Run relevant tests using `unittest`.
 *   **Memory Sample Data**: `python src/generate_sample_data.py` (See memory docs for options).
