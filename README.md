@@ -7,7 +7,7 @@ Finding Malware with the 'run-tool analyze_function()' feature
 Inspecting function with strange string
 ![momento-0-malwarefind](https://github.com/user-attachments/assets/7779d9a4-316e-49bf-ada0-4468d9bd0bc1)
 
-Inspecting strage function name 'SCARRY4'
+Inspecting strange function
 ![momento-2-malwarefind](https://github.com/user-attachments/assets/0f2ac533-3d19-4b13-9757-a8e0d1fb8f0b)
 
 Uh oh that doesn't sound good
