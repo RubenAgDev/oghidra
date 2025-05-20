@@ -7,7 +7,7 @@ OGhidra bridges the gap between Large Language Models (LLMs) running via Ollama 
 ![OGhidra](https://github.com/user-attachments/assets/21d2ec49-a814-407f-b56b-50fdb59ccab5)
 
 
-Finding Malware with the 'run-tool analyze_function()' feature
+## Finding Malware with the 'run-tool analyze_function()' feature
 
 Inspecting function with strange string
 ![momento-0-malwarefind](https://github.com/user-attachments/assets/7779d9a4-316e-49bf-ada0-4468d9bd0bc1)
