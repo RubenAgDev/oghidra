@@ -5,3 +5,4 @@ python-dotenv>=1.0.0
 sentence-transformers>=2.2.2 # Optional: for vector search and CAG knowledge summarization
 numpy>=1.24.0             # Optional: dependency for sentence-transformers
 rich>=13.7.1              # For enhanced terminal output in interactive mode 
+huggingface_hub[hf_xet]   # Add huggingface_hub with the hf_xet extra dependency
