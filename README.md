@@ -2,6 +2,11 @@
 
 OGhidra bridges the gap between Large Language Models (LLMs) running via Ollama and the Ghidra reverse engineering platform through the GhidraMCP API. It enables using natural language to interact with Ghidra for binary analysis tasks.
 
+## OGhidra Architecture
+
+![OGhidra](https://github.com/user-attachments/assets/21d2ec49-a814-407f-b56b-50fdb59ccab5)
+
+
 Finding Malware with the 'run-tool analyze_function()' feature
 
 Inspecting function with strange string
