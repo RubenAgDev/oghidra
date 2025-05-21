@@ -29,7 +29,7 @@ class CommandParser:
         "decompile_function": ["name"],
         "decompile_function_by_address": ["address"],
         "rename_function": ["old_name", "new_name"],
-        "rename_function_by_address": ["address", "new_name"],
+        "rename_function_by_address": ["function_address", "new_name"],
         "search_functions_by_name": ["query"],
     }
     
@@ -183,8 +183,8 @@ class CommandParser:
         # Map of common incorrect parameter names to correct ones
         param_corrections = {
             "rename_function_by_address": {
-                "function_address": "address",
-                "functionAddress": "address"
+                "address": "function_address",
+                "functionAddress": "function_address"
             },
             "decompile_function_by_address": {
                 "function_address": "address",
@@ -200,13 +200,13 @@ class CommandParser:
                     logger.info(f"Corrected parameter name from '{wrong_name}' to '{correct_name}'")
         
         # For rename_function_by_address, check if address is a function name
-        if command_name == "rename_function_by_address" and "address" in validated_params:
-            addr = validated_params["address"]
+        if command_name == "rename_function_by_address" and "function_address" in validated_params:
+            addr = validated_params["function_address"]
             
             # If it starts with "FUN_" and the rest is hex, extract just the hex part
             if addr.startswith("FUN_") and all(c in "0123456789abcdefABCDEF" for c in addr[4:]):
                 # Extract just the address portion
-                validated_params["address"] = addr[4:]
+                validated_params["function_address"] = addr[4:]
                 logger.info(f"Transformed function address from '{addr}' to '{addr[4:]}'")
         
         # Handle 0x prefix in addresses for various functions
@@ -346,10 +346,10 @@ class CommandParser:
         
         # Add specific guidance based on the command and parameters
         if command_name == "rename_function_by_address":
-            addr = params.get("address", params.get("function_address", ""))
+            addr = params.get("function_address", params.get("address", ""))
             if addr.startswith("FUN_"):
                 return (
-                    f"ERROR: Invalid parameter 'address'. Expected numerical address (e.g., '{addr[4:]}'), "
+                    f"ERROR: Invalid parameter 'function_address'. Expected numerical address (e.g., '{addr[4:]}'), "
                     f"but received function name ('{addr}'). "
                     f"Use the correct address or the 'rename_function' tool if you only have the name."
                 )
