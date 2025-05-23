@@ -56,7 +56,7 @@ OGhidra uses a streamlined three-phase approach:
 
 ## 📹 OGhidra Tutorial Video
 
-[![Watch the tutorial](https://img.youtube.com/vi/6Vopm0t1ZlY/0.jpg)](https://ezrealenoch.github.io/OGhidra/)
+[![Installation and Tool Use Tutorial](https://img.youtube.com/vi/6Vopm0t1ZlY/0.jpg)](https://youtu.be/6Vopm0t1ZlY)
 
 
 ## Pre-installation 
