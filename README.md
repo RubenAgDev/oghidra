@@ -54,9 +54,10 @@ OGhidra uses a streamlined three-phase approach:
 *   `MemoryManager`: Manages session history and RAG (`src/memory_manager.py`).
 *   `CAGManager`: Manages Cache-Augmented Generation (`src/cag/manager.py`).
 
-## 📹 Tutorial Video
+## 📹 OGhidra Tutorial Video
 
-[![Watch the video](https://img.youtube.com/vi/6Vopm0t1ZlY/0.jpg)](https://youtu.be/6Vopm0t1ZlY)
+[![Watch the tutorial](https://img.youtube.com/vi/6Vopm0t1ZlY/0.jpg)](https://ezrealenoch.github.io/OGhidra/)
+
 
 ## Pre-installation 
 Contact me at enochsurge@gmail.com for setup help. 
