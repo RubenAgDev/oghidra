@@ -1,3 +1,84 @@
+## Running with Docker (Recommended for Local Development)
+
+This project can be run using Docker and Docker Compose for a consistent development environment.
+
+**Prerequisites:**
+
+*   Docker: [Install Docker](https://docs.docker.com/get-docker/)
+*   Docker Compose: (Usually included with Docker Desktop)
+
+**Setup:**
+
+1.  **Clone the repository:**
+    ```bash
+    git clone <repository-url>
+    cd <repository-name>
+    ```
+
+2.  **Create an environment file:**
+    Copy the example environment file and customize it if needed:
+    ```bash
+    cp .envexample .env
+    ```
+    **Important:** For Docker Compose, ensure the following settings are in your `.env` file:
+    *   `OLLAMA_URL=http://ollama:11434` (to connect to the Ollama service in Docker)
+    *   `GHIDRA_MCP_EXTENDED_URL=http://localhost:8081` (the Python MCP server will be available on host's port 8081)
+    *   `GHIDRA_MCP_URL=http://host.docker.internal:8080` (if your main Ghidra instance is running on your host machine and you want the application *inside Docker* to connect to it. For Linux, you might need to configure Docker networking differently or use `http://<your-host-ip>:8080`). Alternatively, `http://localhost:8080` if you intend to run the CLI *from your host* against the Dockerized `ghidra_mcp_server.py` and your Ghidra instance is also on the host. For simplicity, `host.docker.internal` is a good default for Docker Desktop users.
+
+3.  **Build and start the services:**
+    ```bash
+    docker-compose up --build -d
+    ```
+    This will build the Docker image for the application, pull the Ollama image, and start both services.
+
+4.  **Pull an Ollama Model:**
+    After the services are up, you need to pull an Ollama model into the Ollama container. For example, to pull `llama3.1` (as recommended in `.envexample`):
+    ```bash
+    docker-compose exec ollama ollama pull llama3.1
+    ```
+    You can replace `llama3.1` with any other model you wish to use. List available models with `docker-compose exec ollama ollama list`.
+
+**Usage:**
+
+*   **Ghidra MCP Extended Server:**
+    The Python-based Ghidra MCP extended server (`ghidra_mcp_server.py`) will automatically start and be available on `http://localhost:8081` on your host machine.
+
+*   **Interactive CLI (main.py):**
+    To run the interactive CLI (`src/main.py`), execute the following command:
+    ```bash
+    docker-compose exec oghidra python src/main.py --interactive
+    ```
+    You can also use other command-line arguments for `main.py` as needed:
+    ```bash
+    docker-compose exec oghidra python src/main.py --query "your query"
+    ```
+
+*   **Accessing Ollama:**
+    The Ollama service is available at `http://localhost:11434` on your host machine.
+
+*   **Accessing Main Ghidra Instance:**
+    The Docker setup for *this* project does not include the main Ghidra application/server itself (typically on port 8080). You are expected to have your Ghidra instance running separately (e.g., on your host machine or another server). Configure `GHIDRA_MCP_URL` in your `.env` file to point to its location.
+
+**Development:**
+
+*   The application code (current directory) is mounted into the `oghidra` container. Changes to your local files will be reflected automatically in the container, usually requiring a restart of the specific process if it's long-running (the `ghidra_mcp_server.py` run by `CMD` will restart if you `docker-compose restart oghidra`, or for `main.py` you just rerun the `exec` command).
+*   To see logs:
+    ```bash
+    docker-compose logs oghidra
+    docker-compose logs ollama
+    ```
+*   To stop the services:
+    ```bash
+    docker-compose down
+    ```
+*   To stop and remove volumes (e.g., to clear Ollama models or application data):
+    ```bash
+    docker-compose down -v
+    ```
+
+---
+(Original README content follows below)
+
 # OGhidra - Ollama-GhidraMCP Bridge
 
 OGhidra bridges the gap between Large Language Models (LLMs) running via Ollama and the Ghidra reverse engineering platform through the GhidraMCP API. It enables using natural language to interact with Ghidra for binary analysis tasks.
@@ -224,4 +305,3 @@ See `README-CAG.md` (now incorporated here) for more details.
 *   **Extended API Server Tests**: `python -m unittest src/test_extended_api.py` (Ensure the extended server is running).
 *   **Bridge/Normalization Tests**: Check `tests/` directory (e.g., `test_command_normalization.py`, `test_bridge.py`). Run relevant tests using `unittest`.
 *   **Memory Sample Data**: `python src/generate_sample_data.py` (See memory docs for options).
-
