@@ -14,11 +14,19 @@ OLLAMA_MODEL_PLANNING=gemma3:27b    # Model for the planning phase
 OLLAMA_MODEL_ANALYSIS=qwen3:30b-a3b   # Model for analyzing results and creating the final response
 
 # GhidraMCP Configuration
-GHIDRA_MCP_URL=http://localhost:8080
-GHIDRA_MCP_EXTENDED_URL=http://localhost:8081 # URL for the extended API server (ghidra_mcp_server.py)
+# GHIDRA_MCP_URL=http://localhost:8080 # Original URL, typically for a Ghidra headless server.
+# If using GhidraMCPClient within the oghidra service to talk to its own ghidra_mcp_server.py,
+# use http://localhost:8081. For external Ghidra instances, configure as needed.
+GHIDRA_MCP_URL=http://localhost:8081
+
+GHIDRA_MCP_EXTENDED_URL=http://localhost:8081 # For host access to the oghidra service's API
 GHIDRA_MCP_TIMEOUT=30
 GHIDRA_MOCK_MODE=false
 GHIDRA_API_PATH=
+
+# Configuration for oghidra service to connect to the dedicated Ghidra-Bridge service
+GHIDRA_BRIDGE_HOST=ghidra
+GHIDRA_BRIDGE_PORT=18001
 
 # Cache-Augmented Generation (CAG) Configuration
 CAG_ENABLED=true                    # Enable or disable CAG feature (true/false)

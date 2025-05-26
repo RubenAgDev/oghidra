@@ -1,0 +1,44 @@
+# Base OS: Ubuntu 22.04
+FROM ubuntu:22.04
+
+ARG GHIDRA_VERSION_NAME=11.1.1_PUBLIC_20240605
+ARG GHIDRA_ZIP_FILE=ghidra_${GHIDRA_VERSION_NAME}.zip
+ARG GHIDRA_DOWNLOAD_URL=https://github.com/NationalSecurityAgency/ghidra/releases/download/Ghidra_11.1.1_build/${GHIDRA_ZIP_FILE}
+ARG GHIDRA_INSTALL_DIR_NAME=ghidra_11.1.1_PUBLIC 
+# This is the typical name of the directory inside the zip
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV GHIDRA_INSTALL_PATH=/opt/ghidra
+ENV GHIDRA_BRIDGE_PORT=18001
+
+# Install dependencies: Java (OpenJDK 17), unzip, wget, python3, pip
+RUN apt-get update &&     apt-get install -y --no-install-recommends     openjdk-17-jdk     unzip     wget     python3     python3-pip     && rm -rf /var/lib/apt/lists/*
+
+# Create a non-root user for Ghidra (optional, but good practice)
+# RUN useradd -ms /bin/bash ghidrauser
+# USER ghidrauser
+# WORKDIR /home/ghidrauser
+# ENV GHIDRA_INSTALL_PATH=/home/ghidrauser/ghidra
+
+# For simplicity in this step, run as root.
+WORKDIR /opt
+
+# Download and install Ghidra
+RUN wget --progress=dot:giga -O ${GHIDRA_ZIP_FILE} ${GHIDRA_DOWNLOAD_URL} &&     unzip ${GHIDRA_ZIP_FILE} &&     rm ${GHIDRA_ZIP_FILE} &&     mv /opt/${GHIDRA_INSTALL_DIR_NAME} ${GHIDRA_INSTALL_PATH}
+
+# Install ghidra-bridge Python library
+RUN pip3 install ghidra-bridge
+
+# Install ghidra-bridge server component into the Ghidra installation
+# This needs to be done after Ghidra is installed.
+# The --headless flag is important for server environments.
+RUN python3 -m ghidra_bridge.install --headless --install-all ${GHIDRA_INSTALL_PATH}
+
+# Expose the ghidra-bridge server port
+EXPOSE ${GHIDRA_BRIDGE_PORT}
+
+# Set the entrypoint to launch Ghidra headless and the ghidra-bridge server
+# This will make Ghidra available for scripting via ghidra-bridge.
+# Note: GHIDRA_HEADLESS_LAUNCH_SCRIPTNAME might vary based on exact Ghidra version or if a wrapper is needed.
+# For ghidra-bridge, it directly launches a server.
+CMD ["python3", "-m", "ghidra_bridge.server", "--server_host", "0.0.0.0", "--server_port", "${GHIDRA_BRIDGE_PORT}", "${GHIDRA_INSTALL_PATH}"]

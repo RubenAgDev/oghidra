@@ -1,6 +1,6 @@
 ## Running with Docker (Recommended for Local Development)
 
-This project can be run using Docker and Docker Compose for a consistent development environment.
+This project can be run using Docker and Docker Compose for a consistent development environment. This setup includes the main Python application, an Ollama service, and a dedicated Ghidra service with PyGhidra (`ghidra-bridge`) support.
 
 **Prerequisites:**
 
@@ -16,62 +16,79 @@ This project can be run using Docker and Docker Compose for a consistent develop
     ```
 
 2.  **Create an environment file:**
-    Copy the example environment file and customize it if needed:
+    Copy the example environment file and customize it.
     ```bash
     cp .envexample .env
     ```
-    **Important:** For Docker Compose, ensure the following settings are in your `.env` file:
-    *   `OLLAMA_URL=http://ollama:11434` (to connect to the Ollama service in Docker)
-    *   `GHIDRA_MCP_EXTENDED_URL=http://localhost:8081` (the Python MCP server will be available on host's port 8081)
-    *   `GHIDRA_MCP_URL=http://host.docker.internal:8080` (if your main Ghidra instance is running on your host machine and you want the application *inside Docker* to connect to it. For Linux, you might need to configure Docker networking differently or use `http://<your-host-ip>:8080`). Alternatively, `http://localhost:8080` if you intend to run the CLI *from your host* against the Dockerized `ghidra_mcp_server.py` and your Ghidra instance is also on the host. For simplicity, `host.docker.internal` is a good default for Docker Desktop users.
+    **Important:** For the Docker Compose setup, ensure the following settings are configured in your `.env` file:
+    *   `OLLAMA_URL=http://ollama:11434` (for the `oghidra` service to connect to the Ollama service)
+    *   `GHIDRA_MCP_EXTENDED_URL=http://localhost:8081` (This is the URL for external tools or users on the host machine to access the `ghidra_mcp_server.py` running in the `oghidra` container).
+    *   `# GHIDRA_MCP_URL`: This variable is used by `GhidraMCPClient`. Its original purpose was for a general Ghidra headless server. With the new `ghidra` service providing `ghidra-bridge` access, this variable's role needs re-evaluation if `GhidraMCPClient` is to be used directly against a Ghidra instance. For now, it likely points to the `oghidra` service itself if used internally (e.g., `http://oghidra:8081`).
+    *   `# For ghidra_mcp_server.py (in oghidra service) to connect to the new ghidra (bridge) service:`
+    *   `GHIDRA_BRIDGE_HOST=ghidra`
+    *   `GHIDRA_BRIDGE_PORT=18001`
+    *(Note: `ghidra_mcp_server.py` will need to be updated to use `GHIDRA_BRIDGE_HOST` and `GHIDRA_BRIDGE_PORT` to communicate with the new `ghidra` service via `ghidra-bridge`. This README update assumes such a modification is planned or done separately.)*
 
 3.  **Build and start the services:**
     ```bash
     docker-compose up --build -d
     ```
-    This will build the Docker image for the application, pull the Ollama image, and start both services.
+    This will build the Docker images for the application and the Ghidra service, pull the Ollama image, and start all three services.
 
 4.  **Pull an Ollama Model:**
-    After the services are up, you need to pull an Ollama model into the Ollama container. For example, to pull `llama3.1` (as recommended in `.envexample`):
+    After the services are up, you need to pull an Ollama model into the Ollama container. For example:
     ```bash
     docker-compose exec ollama ollama pull llama3.1
     ```
-    You can replace `llama3.1` with any other model you wish to use. List available models with `docker-compose exec ollama ollama list`.
+
+**Services Overview:**
+
+*   **`oghidra` Service (Application Server):**
+    *   Runs the main Python application, including `ghidra_mcp_server.py` (the extended API server).
+    *   Accessible from the host at `http://localhost:8081`.
+    *   Connects to the `ollama` service at `http://ollama:11434`.
+    *   It is intended to connect to the `ghidra` service using `ghidra-bridge` (PyGhidra) via `ghidra:18001`. (This requires code changes in `ghidra_mcp_server.py` to utilize `GHIDRA_BRIDGE_HOST` and `GHIDRA_BRIDGE_PORT`).
+
+*   **`ollama` Service (LLM Server):**
+    *   Runs the Ollama LLM service.
+    *   Accessible from the host at `http://localhost:11434`.
+    *   Stores models in the `ollama_data` Docker volume.
+
+*   **`ghidra` Service (Ghidra Instance with PyGhidra):**
+    *   Runs Ghidra (version 11.1.1) with the `ghidra-bridge` server enabled.
+    *   The `ghidra-bridge` server listens on port `18001` (accessible as `ghidra:18001` from other services in the Docker network, or `localhost:18001` from the host).
+    *   This service allows the `oghidra` application (specifically `ghidra_mcp_server.py`) to script and interact with Ghidra programmatically.
+    *   A Docker volume `ghidra_projects` is mapped to `/opt/ghidra_projects` inside the container for persistent storage of Ghidra projects. (Ghidra in this container runs as root, and its WORKDIR is `/opt`).
 
 **Usage:**
 
-*   **Ghidra MCP Extended Server:**
-    The Python-based Ghidra MCP extended server (`ghidra_mcp_server.py`) will automatically start and be available on `http://localhost:8081` on your host machine.
+*   **Ghidra MCP Extended Server (`oghidra` service):**
+    *   Available on `http://localhost:8081` on your host machine. This is the primary endpoint for interacting with the application.
 
-*   **Interactive CLI (main.py):**
-    To run the interactive CLI (`src/main.py`), execute the following command:
+*   **Interactive CLI (`main.py` in `oghidra` service):**
+    To run the interactive CLI:
     ```bash
     docker-compose exec oghidra python src/main.py --interactive
     ```
-    You can also use other command-line arguments for `main.py` as needed:
-    ```bash
-    docker-compose exec oghidra python src/main.py --query "your query"
-    ```
 
-*   **Accessing Ollama:**
-    The Ollama service is available at `http://localhost:11434` on your host machine.
-
-*   **Accessing Main Ghidra Instance:**
-    The Docker setup for *this* project does not include the main Ghidra application/server itself (typically on port 8080). You are expected to have your Ghidra instance running separately (e.g., on your host machine or another server). Configure `GHIDRA_MCP_URL` in your `.env` file to point to its location.
+*   **Accessing Ghidra Instance (via `ghidra-bridge`):**
+    *   The `ghidra` service runs a `ghidra-bridge` server, accessible on `localhost:18001` from the host. You can test this with a separate Python script using the `ghidra-bridge` client library if you want to interact with Ghidra directly.
+    *   The `oghidra` service is intended to use this bridge internally to perform Ghidra operations based on requests to its own API (on port 8081).
 
 **Development:**
 
-*   The application code (current directory) is mounted into the `oghidra` container. Changes to your local files will be reflected automatically in the container, usually requiring a restart of the specific process if it's long-running (the `ghidra_mcp_server.py` run by `CMD` will restart if you `docker-compose restart oghidra`, or for `main.py` you just rerun the `exec` command).
+*   Code for the `oghidra` application is mounted from your local directory. Changes typically require a restart of the service or relevant process.
 *   To see logs:
     ```bash
     docker-compose logs oghidra
     docker-compose logs ollama
+    docker-compose logs ghidra
     ```
 *   To stop the services:
     ```bash
     docker-compose down
     ```
-*   To stop and remove volumes (e.g., to clear Ollama models or application data):
+*   To stop and remove volumes (clears all data including Ollama models and Ghidra projects):
     ```bash
     docker-compose down -v
     ```
